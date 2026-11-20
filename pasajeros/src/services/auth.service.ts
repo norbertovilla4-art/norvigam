@@ -1,7 +1,7 @@
 
 import * as SecureStore from 'expo-secure-store';
 
-const API_URL = 'http://192.168.1.19:3000/api';
+const API_URL = 'https://norvigam.onrender.com/api';
 
 export interface Usuario {
   id: string;
