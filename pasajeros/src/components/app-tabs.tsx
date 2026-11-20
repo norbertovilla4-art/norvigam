@@ -27,6 +27,12 @@ export default function AppTabs() {
           renderingMode="template"
         />
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="solicitar">
+  <NativeTabs.Trigger.Label>Solicitar viaje</NativeTabs.Trigger.Label>
+  <NativeTabs.Trigger.Icon
+    sf="car.fill"
+  />
+</NativeTabs.Trigger>
     </NativeTabs>
   );
 }

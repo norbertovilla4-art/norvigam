@@ -7,3 +7,24 @@ web-build/
 !.env.example
 *.log
 .DS_Store
+
+# Respaldos y archivos temporales
+*.respaldo*
+*backup*
+*.bak
+*.log
+
+# Auditorias locales
+auditoria*.js
+auditoria*.ps1
+INFORME_AUDITORIA*.txt
+
+# Scripts locales de pruebas y diagnostico del backend
+backend/auditoria.js
+backend/restablecer-password.js
+backend/revisar-*.js
+backend/verificar-*.js
+
+backend/verificar-password.js*
+
+*_respaldo*
