@@ -13,6 +13,7 @@ const vehiculosRoutes = require('./routes/vehiculos.routes');
 const ubicacionesRoutes = require('./routes/ubicaciones.routes');
 const app = express();
 const adminRoutes = require('./routes/admin.routes');
+const documentosRoutes = require('./routes/documentos.routes');
 app.use(helmet());
 // CORS restringido a equipos de desarrollo y redes privadas
 const corsOptions = {
@@ -35,6 +36,7 @@ app.use('/api/conductores', conductoresRoutes);
 app.use('/api/vehiculos', vehiculosRoutes);
 app.use('/api/ubicaciones', ubicacionesRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/documentos', documentosRoutes);
 // Ruta principal
 app.get('/', (req, res) => {
   res.json({

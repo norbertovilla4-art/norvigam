@@ -453,12 +453,180 @@ async function obtenerReporteFinanciero(req, res) {
   }
 }
 
-  module.exports = {
+// LISTAR DOCUMENTOS DE CONDUCTORES
+async function listarDocumentos(req, res) {
+  try {
+    const estado = String(req.query.estado || '').trim();
+    const estadosPermitidos = ['pendiente', 'aprobado', 'rechazado'];
+
+    if (estado && !estadosPermitidos.includes(estado)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Estado de documento no permitido'
+      });
+    }
+
+    const valores = [];
+    let condicion = '';
+
+    if (estado) {
+      valores.push(estado);
+      condicion = `WHERE d.estado = $1`;
+    }
+
+    const resultado = await pool.query(
+      `SELECT
+         d.id,
+         d.conductor_id,
+         d.vehiculo_id,
+         d.tipo_documento,
+         d.archivo_path,
+         d.estado,
+         d.observaciones,
+         d.fecha_registro,
+         d.fecha_revision,
+         u.nombre AS conductor_nombre,
+         u.apellido AS conductor_apellido,
+         u.telefono AS conductor_telefono,
+         v.placa AS vehiculo_placa
+       FROM public.documentos_conductores d
+       LEFT JOIN public.usuarios u ON u.id = d.conductor_id
+       LEFT JOIN public.vehiculos v ON v.id = d.vehiculo_id
+       ${condicion}
+       ORDER BY d.fecha_registro DESC
+       LIMIT 300`,
+      valores
+    );
+
+    return res.json({
+      success: true,
+      total: resultado.rows.length,
+      documentos: resultado.rows
+    });
+
+  } catch (error) {
+    console.error('Error al listar documentos:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'No se pudieron consultar los documentos'
+    });
+  }
+}
+
+
+// APROBAR O RECHAZAR DOCUMENTOS
+async function revisarDocumento(req, res) {
+  try {
+    const { id } = req.params;
+    const { estado, observaciones } = req.body;
+
+    if (!['aprobado', 'rechazado'].includes(estado)) {
+      return res.status(400).json({
+        success: false,
+        message: 'La revisión debe ser aprobado o rechazado'
+      });
+    }
+
+    if (
+      estado === 'rechazado' &&
+      !String(observaciones || '').trim()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Debes indicar el motivo del rechazo'
+      });
+    }
+
+    const resultado = await pool.query(
+      `UPDATE public.documentos_conductores
+       SET estado = $1,
+           observaciones = $2,
+           fecha_revision = NOW()
+       WHERE id = $3
+       RETURNING id, conductor_id, vehiculo_id,
+                 tipo_documento, estado, observaciones,
+                 fecha_revision`,
+      [
+        estado,
+        String(observaciones || '').trim() || null,
+        id
+      ]
+    );
+
+    if (resultado.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Documento no encontrado'
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: estado === 'aprobado'
+        ? 'Documento aprobado correctamente'
+        : 'Documento rechazado correctamente',
+      documento: resultado.rows[0]
+    });
+
+  } catch (error) {
+    console.error('Error al revisar documento:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'No se pudo revisar el documento'
+    });
+  }
+}
+
+
+// GENERAR ENLACE TEMPORAL PARA VER DOCUMENTO PRIVADO
+async function obtenerEnlaceDocumento(req, res) {
+  try {
+    const { id } = req.params;
+
+    const resultado = await pool.query(
+      `SELECT archivo_path
+       FROM public.documentos_conductores
+       WHERE id = $1`,
+      [id]
+    );
+
+    if (resultado.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Documento no encontrado'
+      });
+    }
+
+    const { data, error } = await require('../config/supabase.storage')
+      .storage
+      .from('tura-documentos')
+      .createSignedUrl(resultado.rows[0].archivo_path, 300);
+
+    if (error) throw error;
+
+    return res.json({
+      success: true,
+      url: data.signedUrl,
+      expira_en_segundos: 300
+    });
+
+  } catch (error) {
+    console.error('Error al generar enlace:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'No se pudo generar el enlace del documento'
+    });
+  }
+}
+module.exports = {
   obtenerResumen,
   listarUsuarios,
   cambiarEstadoUsuario,
   listarVehiculos,
   cambiarEstadoVehiculo,
   listarViajes,
-  obtenerReporteFinanciero
+  obtenerReporteFinanciero,
+  listarDocumentos,
+  revisarDocumento,
+  obtenerEnlaceDocumento
 };
