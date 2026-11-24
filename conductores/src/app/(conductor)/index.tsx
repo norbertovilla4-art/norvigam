@@ -2,7 +2,6 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import * as Location from 'expo-location';
-import { actualizarUbicacion } from '../../services/ubicaciones.service';
 import {
   ActivityIndicator,
   Alert,
@@ -12,6 +11,8 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+
+import { actualizarUbicacion } from '../../services/ubicaciones.service';
 
 import {
   cambiarDisponibilidad,
@@ -27,6 +28,7 @@ export default function HomeScreen() {
   const [cargando, setCargando] = useState(true);
   const [procesando, setProcesando] = useState(false);
 
+  // Consultar disponibilidad al abrir la pantalla
   useEffect(() => {
     async function cargarEstado() {
       try {
@@ -45,19 +47,150 @@ export default function HomeScreen() {
     cargarEstado();
   }, []);
 
+  // Seguimiento GPS mientras el conductor esté disponible
+  useEffect(() => {
+    if (!disponible) return;
+
+    let activo = true;
+    let suscripcion: Location.LocationSubscription | null = null;
+
+    async function iniciarGPS() {
+      try {
+        const permiso =
+          await Location.requestForegroundPermissionsAsync();
+
+        if (!activo) return;
+
+        if (permiso.status !== 'granted') {
+          Alert.alert(
+            'Permiso de ubicación',
+            'Debes permitir el acceso a la ubicación para recibir viajes.'
+          );
+          return;
+        }
+
+        const gpsActivo = await Location.hasServicesEnabledAsync();
+
+        if (!activo) return;
+
+        if (!gpsActivo) {
+          Alert.alert(
+            'GPS desactivado',
+            'Activa la ubicación de tu teléfono para compartir tu posición.'
+          );
+          return;
+        }
+
+        // Obtener y enviar la primera ubicación
+        const posicion = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+
+        if (!activo) return;
+
+        await actualizarUbicacion({
+          latitud: posicion.coords.latitude,
+          longitud: posicion.coords.longitude,
+          precision_metros: posicion.coords.accuracy ?? undefined,
+        });
+
+        if (!activo) return;
+
+        // Continuar enviando actualizaciones GPS
+        suscripcion = await Location.watchPositionAsync(
+          {
+            accuracy: Location.Accuracy.Balanced,
+            timeInterval: 10000,
+            distanceInterval: 20,
+          },
+          async (posicionActual) => {
+            if (!activo) return;
+
+            try {
+              await actualizarUbicacion({
+                latitud: posicionActual.coords.latitude,
+                longitud: posicionActual.coords.longitude,
+                precision_metros:
+                  posicionActual.coords.accuracy ?? undefined,
+              });
+            } catch (error) {
+              console.warn(
+                'No se pudo actualizar la ubicación GPS:',
+                error
+              );
+            }
+          }
+        );
+
+        if (!activo) {
+          suscripcion.remove();
+          suscripcion = null;
+        }
+      } catch (error: any) {
+        console.error('Error al iniciar GPS:', error);
+
+        if (activo) {
+          Alert.alert(
+            'Error GPS',
+            error.response?.data?.message ||
+              'No se pudo obtener o enviar la ubicación.'
+          );
+        }
+      }
+    }
+
+    iniciarGPS();
+
+    return () => {
+      activo = false;
+
+      if (suscripcion) {
+        suscripcion.remove();
+        suscripcion = null;
+      }
+    };
+  }, [disponible]);
+
+  // Activar o desactivar disponibilidad
   async function cambiarEstado() {
     if (procesando || cargando) return;
 
     setProcesando(true);
 
     try {
-      const nuevoEstado = await cambiarDisponibilidad(!disponible);
+      const conectar = !disponible;
+
+      if (conectar) {
+        const permiso =
+          await Location.requestForegroundPermissionsAsync();
+
+        if (permiso.status !== 'granted') {
+          Alert.alert(
+            'Ubicación necesaria',
+            'Debes permitir el acceso a la ubicación para conectarte y recibir viajes.'
+          );
+          return;
+        }
+
+        const gpsActivo = await Location.hasServicesEnabledAsync();
+
+        if (!gpsActivo) {
+          Alert.alert(
+            'GPS desactivado',
+            'Activa la ubicación de tu teléfono antes de conectarte.'
+          );
+          return;
+        }
+      }
+
+      const nuevoEstado = await cambiarDisponibilidad(conectar);
+
       setDisponible(nuevoEstado.disponible);
 
       Alert.alert(
         'Tura Móvil',
         nuevoEstado.disponible
-          ? 'Ahora estás disponible para recibir viajes.'
+          ? 'Ahora estás disponible para recibir viajes. Activando GPS...'
           : 'Has dejado de recibir solicitudes de viajes.'
       );
     } catch (error: any) {
@@ -72,6 +205,7 @@ export default function HomeScreen() {
     }
   }
 
+  // Cerrar sesión
   function confirmarCerrarSesion() {
     Alert.alert(
       'Cerrar sesión',
@@ -88,6 +222,7 @@ export default function HomeScreen() {
             try {
               if (disponible) {
                 await cambiarDisponibilidad(false);
+                setDisponible(false);
               }
 
               await cerrarSesionConductor();
@@ -181,7 +316,7 @@ export default function HomeScreen() {
         </View>
         <Text style={styles.flecha}>›</Text>
       </TouchableOpacity>
-       
+
       <TouchableOpacity
         style={styles.botonSolicitudes}
         onPress={() => router.push('/(conductor)/viaje-activo')}
@@ -211,8 +346,6 @@ export default function HomeScreen() {
         </View>
         <Text style={styles.flecha}>›</Text>
       </TouchableOpacity>
-  
-       
 
       <View style={styles.card}>
         <Text style={styles.cardTitulo}>Solicitudes de viaje</Text>

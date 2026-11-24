@@ -1,4 +1,4 @@
-
+ 
 const pool = require('../config/database');
 
 // Registrar o actualizar la ubicación GPS del conductor
@@ -12,6 +12,7 @@ async function actualizarUbicacion(req, res) {
     }
 
     const { latitud, longitud, precision_metros } = req.body;
+    const conductorId = req.usuario.id;
 
     if (
       typeof latitud !== 'number' ||
@@ -29,6 +30,7 @@ async function actualizarUbicacion(req, res) {
 
     if (
       precision_metros !== undefined &&
+      precision_metros !== null &&
       (!Number.isFinite(precision_metros) || precision_metros < 0)
     ) {
       return res.status(400).json({
@@ -37,18 +39,42 @@ async function actualizarUbicacion(req, res) {
       });
     }
 
-    const resultado = await pool.query(
+    // Verificar que la cuenta esté activa
+    const usuario = await pool.query(
+      `SELECT id
+       FROM public.usuarios
+       WHERE id = $1
+         AND rol = 'conductor'
+         AND estado = 'activo'`,
+      [conductorId]
+    );
+
+    if (usuario.rows.length === 0) {
+      return res.status(403).json({
+        success: false,
+        message: 'La cuenta del conductor no está activa'
+      });
+    }
+
+    // Actualizar ubicación mientras esté disponible
+    const disponibilidad = await pool.query(
+      `UPDATE public.conductores_estado
+       SET ultima_latitud = $2,
+           ultima_longitud = $3,
+           ultima_actualizacion = NOW()
+       WHERE conductor_id = $1
+         AND disponible = TRUE
+       RETURNING conductor_id, ultima_latitud,
+                 ultima_longitud, ultima_actualizacion`,
+      [conductorId, latitud, longitud]
+    );
+
+    // Mantener el seguimiento de viajes activos
+    const viajeActivo = await pool.query(
       `INSERT INTO public.ubicaciones_conductores
        (conductor_id, latitud, longitud, precision_metros, actualizado_en)
        SELECT $1, $2, $3, $4, NOW()
        WHERE EXISTS (
-         SELECT 1
-         FROM public.usuarios
-         WHERE id = $1
-           AND rol = 'conductor'
-           AND estado = 'activo'
-       )
-       AND EXISTS (
          SELECT 1
          FROM public.viajes
          WHERE conductor_id = $1
@@ -63,24 +89,31 @@ async function actualizarUbicacion(req, res) {
        RETURNING conductor_id, latitud, longitud,
                  precision_metros, actualizado_en`,
       [
-        req.usuario.id,
+        conductorId,
         latitud,
         longitud,
         precision_metros ?? null
       ]
     );
 
-    if (resultado.rows.length === 0) {
+    if (
+      disponibilidad.rows.length === 0 &&
+      viajeActivo.rows.length === 0
+    ) {
       return res.status(409).json({
         success: false,
-        message: 'No tienes un viaje activo para compartir ubicación'
+        message: 'Debes estar disponible o tener un viaje activo'
       });
     }
 
     return res.status(200).json({
       success: true,
       message: 'Ubicación actualizada',
-      ubicacion: resultado.rows[0]
+      ubicacion: {
+        latitud,
+        longitud,
+        precision_metros: precision_metros ?? null
+      }
     });
 
   } catch (error) {
@@ -142,3 +175,4 @@ module.exports = {
   actualizarUbicacion,
   obtenerUbicacionConductor
 };
+
