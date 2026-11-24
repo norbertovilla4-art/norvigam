@@ -6,13 +6,18 @@ const { verificarToken } = require('../middleware/auth.middleware');
 
 const {
   actualizarDisponibilidad,
-  obtenerDisponibilidad
+  obtenerDisponibilidad,
+  obtenerConductoresCercanos
 } = require('../controllers/conductores.controller');
 
-// Consultar disponibilidad
+// Consultar disponibilidad del conductor
 router.get('/disponibilidad', verificarToken, obtenerDisponibilidad);
 
-// Activar o desactivar disponibilidad
+// Actualizar disponibilidad del conductor
 router.patch('/disponibilidad', verificarToken, actualizarDisponibilidad);
 
+// Consultar conductores cercanos para pasajeros
+router.get('/cercanos', verificarToken, obtenerConductoresCercanos);
+
 module.exports = router;
+ 

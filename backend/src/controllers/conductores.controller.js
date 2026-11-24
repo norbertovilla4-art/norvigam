@@ -102,7 +102,88 @@ async function obtenerDisponibilidad(req, res) {
   }
 }
 
-module.exports = {
+async function obtenerConductoresCercanos(req, res) {
+  try {
+    if (req.usuario.rol !== 'pasajero') {
+      return res.status(403).json({
+        success: false,
+        message: 'Solo los pasajeros pueden consultar conductores cercanos.'
+      });
+    }
+
+    const latitud = Number(req.query.latitud);
+    const longitud = Number(req.query.longitud);
+    const radioKm = Number(req.query.radio_km || 10);
+
+    if (
+      !Number.isFinite(latitud) ||
+      !Number.isFinite(longitud) ||
+      latitud < -90 || latitud > 90 ||
+      longitud < -180 || longitud > 180 ||
+      radioKm <= 0 || radioKm > 30
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Coordenadas o radio no válidos.'
+      });
+    }
+
+    const resultado = await pool.query(`
+      SELECT *
+      FROM (
+        SELECT DISTINCT ON (u.id)
+          u.id AS conductor_id,
+          ce.ultima_latitud AS latitud,
+          ce.ultima_longitud AS longitud,
+          ce.ultima_actualizacion,
+          v.tipo_vehiculo,
+          v.marca,
+          v.modelo,
+          ROUND((
+            6371 * 2 * ASIN(SQRT(
+              POWER(SIN(RADIANS(ce.ultima_latitud - $1) / 2), 2) +
+              COS(RADIANS($1)) *
+              COS(RADIANS(ce.ultima_latitud)) *
+              POWER(SIN(RADIANS(ce.ultima_longitud - $2) / 2), 2)
+            ))
+          )::numeric, 2) AS distancia_km
+        FROM public.usuarios u
+        INNER JOIN public.conductores_estado ce
+          ON ce.conductor_id = u.id
+        INNER JOIN public.vehiculos v
+          ON v.conductor_id = u.id
+        WHERE u.rol = 'conductor'
+          AND u.estado = 'activo'
+          AND ce.disponible = TRUE
+          AND ce.ultima_latitud IS NOT NULL
+          AND ce.ultima_longitud IS NOT NULL
+          AND ce.ultima_actualizacion >= NOW() - INTERVAL '5 minutes'
+          AND v.estado = 'activo'
+        ORDER BY u.id, v.fecha_registro DESC
+      ) AS conductores
+      WHERE distancia_km <= $3
+      ORDER BY distancia_km ASC
+      LIMIT 100
+    `, [latitud, longitud, radioKm]);
+
+    return res.status(200).json({
+      success: true,
+      total: resultado.rows.length,
+      conductores: resultado.rows
+    });
+
+  } catch (error) {
+    console.error('Error buscando conductores cercanos:', error);
+
+    return res.status(500).json({
+      success: false,
+      message: 'Error al consultar conductores cercanos.'
+    });
+  }
+}
+
+ module.exports = {
   actualizarDisponibilidad,
-  obtenerDisponibilidad
+  obtenerDisponibilidad,
+  obtenerConductoresCercanos
 };
