@@ -424,6 +424,53 @@ async function cambiarEstadoViaje(req, res) {
     });
   }
 }
+
+// PASAJEROS: consultar su viaje activo
+async function obtenerMiViajePasajero(req, res) {
+  try {
+    const pasajeroId = req.usuario.id;
+
+    if (req.usuario.rol !== 'pasajero') {
+      return res.status(403).json({
+        success: false,
+        message: 'Solo los pasajeros pueden consultar su viaje'
+      });
+    }
+
+    const resultado = await pool.query(
+      `SELECT *
+       FROM public.viajes
+       WHERE pasajero_id = $1
+         AND estado IN (
+  'solicitado',
+  'aceptado',
+  'en_camino',
+  'en_curso',
+  'completado',
+  'cancelado'
+)
+       ORDER BY fecha_creacion DESC
+       LIMIT 1`,
+      [pasajeroId]
+    );
+
+    return res.status(200).set({
+      'Cache-Control': 'no-store'
+    }).json({
+      success: true,
+      viaje: resultado.rows[0] || null
+    });
+
+  } catch (error) {
+    console.error('Error consultando viaje del pasajero:', error.message);
+
+    return res.status(500).json({
+      success: false,
+      message: 'No se pudo consultar el viaje'
+    });
+  }
+}
+
 // CONDUCTORES: consultar el viaje activo
 async function obtenerMiViajeActivo(req, res) {
   try {
@@ -649,11 +696,12 @@ const viajesConDirecciones = await Promise.all(
   }
 }
 
-module.exports = {
+ module.exports = {
   solicitarViaje,
   obtenerViajesPendientes,
   aceptarViaje,
   cambiarEstadoViaje,
   obtenerMiViajeActivo,
+  obtenerMiViajePasajero,
   obtenerHistorialGanancias
 };
